@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 torch.set_float32_matmul_precision('medium')
-from torch.data.utils import DataLoader
+from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from data import TokenClassificationDataset
 import argparse
