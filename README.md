@@ -1,5 +1,9 @@
 # NLI_ETP
 
+Download the requirements using pip install -r requirements.txt
+
+Replace the model_checkpoint.py from pytorch_lightning package in your conda environment with the model_checkpoint. Just so that the overwrite_existing can be used in the ModelCheckpoint in main.py. Just to prevent saving multiple same models which can take up alot of space. If this is not a problem, can ignore.
+
 1. Download the Eraser data
 2. Preprocess data to train NLI predictor
 3. Train NLI predictor
