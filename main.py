@@ -17,8 +17,8 @@ from transformers import (
     AutoModelForSequenceClassification
 )
 from fairseq.optim.adafactor import Adafactor
-from configs.templates import *
-from configs.generate_config import *
+# from configs.templates import *
+# from configs.generate_config import *
 from collections import defaultdict
 from preprocess.data import *
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -59,14 +59,18 @@ class NLI_ETP(pl.LightningModule):
         
         ## load nli model
         print ("Loading pretrained NLI model")
-        if hparams.answer_only:
-            nli_path = f'nli_weights/{hparams.task}_nli_model_answer.pt'
+        if hparams.nli_trained:
+            add_str = 'trained'
         else:
-            nli_path = f'nli_weights/{hparams.task}_nli_model_{int(hparams.pct_train_rationales*100)}.pt'
+            add_str = 'untrained'
+        if hparams.answer_only:
+            nli_path = f'nli_weights/{hparams.task}_nli_model_answer_{add_str}.pt'
+        else:
+            nli_path = f'nli_weights/{hparams.task}_nli_model_{int(hparams.pct_train_rationales*100)}_{add_str}.pt'
 
         self.nli_model = AutoModelForSequenceClassification.from_pretrained('cross-encoder/nli-deberta-v3-large')
         self.nli_tokenizer = AutoTokenizer.from_pretrained('cross-encoder/nli-deberta-v3-large')
-        if not hparams.unsupervised:
+        if not hparams.unsupervised and not hparams.supervised:
             nli_weights = torch.load(nli_path,map_location = 'cpu')
             self.nli_model.load_state_dict(nli_weights)
         for param in self.nli_model.parameters(): # Set to False
@@ -135,9 +139,8 @@ class NLI_ETP(pl.LightningModule):
                     nli_s_mask = None
                 # nli logits: (bs, max sen,no classes), sen_r_probs : (b,max sen)
                 if self.hparams.align and nli_logits is not None and not self.hparams.supervised:
-                    nli_logits[:,:,2] = -1e4 # set neutral class to a large negative number (enforce selected sentence to only be pos or neg)
+                    # nli_logits[:,:,2] = -1e4 # set neutral class to a large negative number (enforce selected sentence to only be pos or neg)
                     nli_probs = torch.softmax(nli_logits,dim = -1) # (b,max sen,no classes)
-                    
                     nli_p = nli_probs * nli_s_mask.unsqueeze(-1)
                     num_sens = torch.sum(nli_s_mask,dim = 1).unsqueeze(-1) # (b,1)
                     num_sens[num_sens == 0] = 1e9 # if there is no sentences selected, set to a large number to ignore later all when aligning
@@ -257,7 +260,8 @@ class NLI_ETP(pl.LightningModule):
                                                    nli_tokenizer = self.nli_tokenizer,
                                                    debug = self.hparams.debug,
                                                    answer_only=self.hparams.answer_only,
-                                                   attack = self.hparams.attack)
+                                                   attack = self.hparams.attack,
+                                                   pct_data = self.hparams.pct_supervised if self.hparams.supervised else 1.0)
 
         dataloader = DataLoader(train_dataset,
                     batch_size=self.hparams.train_batch_size,
@@ -289,7 +293,8 @@ class NLI_ETP(pl.LightningModule):
                                                    nli_tokenizer = self.nli_tokenizer,
                                                    debug = self.hparams.debug,
                                                    answer_only=self.hparams.answer_only,
-                                                   attack = self.hparams.attack)
+                                                   attack = self.hparams.attack,
+                                                   pct_data = self.hparams.pct_supervised if self.hparams.supervised else 1.0)
         val_dataloader = DataLoader(val_dataset,
                     batch_size=self.hparams.eval_batch_size,
                     collate_fn = val_dataset.collate_fn,
@@ -353,20 +358,21 @@ class LoggingCallback(pl.Callback):
 def main():
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir",type=str, required=False, default = 'data/rationales')
+    parser.add_argument("--data_dir",type=str, required=False, default = 'data')
     parser.add_argument("--output_dir", type=str, required=False, default="results")
     parser.add_argument("--model_name_or_path",type=str, required=False, default='roberta-base')
     parser.add_argument("--tokenizer_name_or_path", type=str, required=False, default='roberta-base')
     parser.add_argument("--model_type", type=str, required=False, default='roberta-sm',help = 'sm = shared model, dm = different model')
     parser.add_argument("--supervised", type=bool, required=False, default=False,help = 'if to use gold z')
     parser.add_argument("--unsupervised", type=bool, required=False, default=False,help = 'without fine-tuning the nli model')
-    parser.add_argument("--align", type=bool, required=False, default=False,help = 'to align task label to nli prediction')
+    parser.add_argument("--align", type=bool, required=False, default=False,help = 'to align task label to nli prediction, inference stage')
     parser.add_argument("--min_one", type=bool, required=False, default=False,help = 'select at least one sen')
     parser.add_argument("--learning_rate",  type=float, required=False, default=2e-5)
     parser.add_argument("--adam_epsilon",  type=float, required=False, default=1e-8)
     parser.add_argument("--warmup_steps", type=float, required=False, default=0.1)
     parser.add_argument("--train_batch_size",  type=int, required=False, default=8)
     parser.add_argument("--eval_batch_size",  type=int, required=False, default=8)
+    parser.add_argument("--test_batch_size",  type=int, required=False, default=8)
     parser.add_argument("--num_train_epochs", type=int, required=False, default=10)
     parser.add_argument("--dropout", type=float, required=False, default=0.2)
     parser.add_argument("--gradient_accumulation_steps", type=int, required=False, default=1)
@@ -386,6 +392,8 @@ def main():
     parser.add_argument("--answer_only",  type=bool, required=False, default=False)
     parser.add_argument("--evaluate_robustness",  type=bool, required=False, default=False) # if to evalaute robustness, should have attack files in data dir
     parser.add_argument("--pct_train_rationales",  type=float, required=False, default=0.1)
+    parser.add_argument("--pct_supervised",  type=float, required=False, default=1.0,help= 'Only for Supervised, to compare between 10\% and 10% rationale')
+    parser.add_argument("--nli_trained",  type=bool, required=False, default=False,help = 'whether to use a nli trained model')
     args = parser.parse_args()
     set_seed(args.seed)
 
@@ -410,7 +418,10 @@ def main():
     if args.plaus_weight <= 0.:
         model_name += '_no_plaus'
     elif args.supervised:
-        model_name += '_S'
+        if args.pct_supervised < 1.0:
+            model_name += f'_S_{int(args.pct_supervised*100)}'
+        else:
+            model_name += '_S'
     else:
         model_name += ('-' + args.model_type.split('-')[-1])
         model_name += f'_{int(args.pct_train_rationales*100)}'
@@ -433,6 +444,12 @@ def main():
     output_num_dir = os.path.join(output_dir,'num')
     makefile(output_num_dir)
     output_num_file = defaultdict()
+    
+    if args.nli_trained:
+        model_name += '_trained'
+    else:
+        model_name += '_untrained'
+    
     for task in all_tasks:
         num_taskdir = os.path.join(output_num_dir,task,str(args.seed))
         makefile(num_taskdir)
@@ -465,7 +482,7 @@ def main():
                  ,early_stop_callback
                 #  ,checkpoint_callback
                  ]
-    
+    print (f"running gpus: {args.gpu_no}")
     train_params = dict(
                         strategy =  args.strategy,
                         accumulate_grad_batches=args.gradient_accumulation_steps,
@@ -498,18 +515,18 @@ def main():
         # with open(args.text_file,'w') as fp:
         #     fp.write('Noisy text logging\n\n')
         
-        if task in dataset_batch_size.keys():
-            args.train_batch_size = dataset_batch_size[task]
-            args.eval_batch_size = dataset_batch_size[task]
-            args.test_batch_size = dataset_batch_size[task]
+        # if task in dataset_batch_size.keys():
+        #     args.train_batch_size = dataset_batch_size[task]
+        #     args.eval_batch_size = dataset_batch_size[task]
+        #     args.test_batch_size = dataset_batch_size[task]
             
-        if args.model_name_or_path.split('-')[-1] == 'large' and args.train_batch_size >= 4:
-            args.train_batch_size = int(args.train_batch_size//4)
-            args.eval_batch_size = int(args.eval_batch_size//4)
-            args.test_batch_size = int(args.test_batch_size//4)
+        # if args.model_name_or_path.split('-')[-1] == 'large' and args.train_batch_size >= 4:
+        #     args.train_batch_size = int(args.train_batch_size//4)
+        #     args.eval_batch_size = int(args.eval_batch_size//4)
+        #     args.test_batch_size = int(args.test_batch_size//4)
         
         ## saved model name
-        model_filename = f"{model_name}_{task}_{args.plaus_weight}_{str(args.seed)}"
+        model_filename = f"{model_name}_{task}_{args.plaus_weight}_{str(args.seed)}_{int(args.pct_train_rationales*100)}"
 
         checkpoint_callback = pl.callbacks.ModelCheckpoint(
         dirpath=model_ckpt_dir,

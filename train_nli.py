@@ -58,6 +58,7 @@ def get_loss(batch,model,loss_fn,args,training=False,return_logits = False,nli_m
     inp = batch["input_ids"]
     mask = batch["attention_mask"]
     labels = batch["label"]
+    # print (labels)
     if not nli_model:
         if not training:
             with torch.no_grad():
@@ -105,22 +106,21 @@ lr scheduler
 """
 
 def train_nli(args):
-    model = AutoModelForSequenceClassification.from_pretrained(args.encoder_model_id).to(args.device)
+    model = AutoModelForSequenceClassification.from_pretrained(args.encoder_model_id,num_labels = 3).to(args.device)
     tokenizer = AutoTokenizer.from_pretrained(args.encoder_model_id)
     
     optimizer = build_optimizer(model,optimizer_name='adam',learning_rate=args.learning_rate)
     if args.answer_only:
-        data_path = f"data/rationales/{args.dataset_name}_answer"
-    elif args.pct_train_rationales != 0.1:
-        data_path = f"data/rationales/{args.dataset_name}/nli_{int(args.pct_train_rationales*100)}"
+        data_path = f"data/{args.dataset_name}_answer"
+    # elif args.pct_train_rationales != 0.1:
     else:
-        data_path = f"data/rationales/{args.dataset_name}"
+        data_path = f"data/{args.dataset_name}/nli_{int(args.pct_train_rationales*100)}"
     dataset = load_data_for_training(tokenizer,"preprocess/nli_loader.py",data_path,max_input_length=args.max_length)
     loss_fn = nn.CrossEntropyLoss()
     collate_fn = Collate_fn(tokenizer)
-    train_dataloader = DataLoader(dataset['train'], batch_size=16,shuffle = True, collate_fn=collate_fn)
-    val_dataloader = DataLoader(dataset['validation'], batch_size=16,shuffle = False, collate_fn=collate_fn)
-    test_dataloader = DataLoader(dataset['test'], batch_size=16,shuffle = False, collate_fn=collate_fn)
+    train_dataloader = DataLoader(dataset['train'], batch_size=args.batch_size,shuffle = True, collate_fn=collate_fn)
+    val_dataloader = DataLoader(dataset['validation'], batch_size=args.batch_size,shuffle = False, collate_fn=collate_fn)
+    test_dataloader = DataLoader(dataset['test'], batch_size=args.batch_size,shuffle = False, collate_fn=collate_fn)
     
     total_steps = len(train_dataloader) * 10  # 10 here is the number of epochs
     warmup_steps = int(total_steps * 0.1)
@@ -140,10 +140,11 @@ def train_nli(args):
     patience = 0
 
     best_val_loss = 1e13
-    for epoch in range(10):
+    print ('Starting training')
+    for epoch in tqdm(range(10),total = 10,desc = f'Training nli predictor for {args.dataset_name}'):
         model.train()
         epoch_train_loss = []
-        for b_no,batch in tqdm(enumerate(train_dataloader),desc = f'Training nli predictor for {args.dataset_name}',total = len(train_dataloader)):
+        for b_no,batch in tqdm(enumerate(train_dataloader),total = len(train_dataloader),desc = f'Epoch {epoch}'):
             optimizer.zero_grad()
             batch = {k:v.to(args.device) for k,v in batch.items()}
             loss = get_loss(batch,model,loss_fn,args,training=True,nli_model=True)
@@ -175,10 +176,16 @@ def train_nli(args):
             patience = 0
             best_val_loss = mean_loss
             model_state_dict = model.state_dict()
-            if args.answer_only:
-                torch.save(model_state_dict,os.path.join(model_dir,f'{args.dataset_name}_nli_model_answer.pt'))
+            if args.encoder_model_id.split('/')[0] != 'cross-encoder':
+                add_name = 'untrained'
             else:
-                torch.save(model_state_dict,os.path.join(model_dir,f'{args.dataset_name}_nli_model_{int(args.pct_train_rationales*100)}.pt'))
+                add_name = 'trained'
+            
+            
+            if args.answer_only:
+                torch.save(model_state_dict,os.path.join(model_dir,f'{args.dataset_name}_nli_model_answer_{add_name}.pt'))
+            else:
+                torch.save(model_state_dict,os.path.join(model_dir,f'{args.dataset_name}_nli_model_{int(args.pct_train_rationales*100)}_{add_name}.pt'))
             print('saved best model')
         else:
             patience += 1
@@ -210,6 +217,7 @@ def main():
     parser.add_argument("--seed",type=int, required=False, default = 42)
     parser.add_argument('--answer_only', type=bool, default=False, help='for Q&A dataset, take only answer')
     parser.add_argument('--pct_train_rationales', type=float, default=0.1, help='Percentage of train examples to provide gold rationales for. None means all available train examples are used.')
+    parser.add_argument('--batch_size', type=int, default=16)
     args = parser.parse_args()
     set_seed(args.seed)
 

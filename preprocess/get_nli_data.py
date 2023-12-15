@@ -202,7 +202,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dataset preprocessing')
-    parser.add_argument('--data_dir', type=str, default='data/rationales', help='Root directory for datasets')
+    parser.add_argument('--data_dir', type=str, default='data', help='Root directory for datasets')
     parser.add_argument('--dataset', type=str,
                         choices=['cose', 'esnli', 'movies', 'multirc', 'sst', 'amazon', 'yelp', 'stf', 'olid', 'irony','fever','evidence_inference','boolq'],nargs = '+')
     parser.add_argument('--arch', type=str, default='cross-encoder/nli-deberta-v3-large')

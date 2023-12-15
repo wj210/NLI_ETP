@@ -13,10 +13,11 @@ from preprocess.data import *
 import pandas as pd
 import pytorch_lightning as pl
 from torch.nn.utils.rnn import pad_sequence
+import random
 
 
 class TokenClassificationDataset(Dataset):
-    def __init__(self,tokenizer,data_dir,task,split,max_length,nli_tokenizer,debug=False,answer_only=False,attack=False):
+    def __init__(self,tokenizer,data_dir,task,split,max_length,nli_tokenizer,debug=False,answer_only=False,attack=False,pct_data=1.0):
         self.split = split
         self.tokenizer = tokenizer
         self.nli_tokenizer = nli_tokenizer
@@ -27,6 +28,7 @@ class TokenClassificationDataset(Dataset):
         self.debug = debug
         self.answer_only = answer_only
         self.attack = attack
+        self.pct_data = pct_data
         self._setup()
     
     def __len__(self):
@@ -46,8 +48,13 @@ class TokenClassificationDataset(Dataset):
         
         with open(main_dir,'rb') as f:
             loaded_data = pickle.load(f)
-
         
+        if self.pct_data < 1.0:
+            sample_size = int(self.pct_data*len(loaded_data['input_ids']))
+            # sample random indices
+            indices = np.random.choice(np.arange(len(loaded_data['input_ids'])),sample_size,replace=False)
+            for k,v in loaded_data.items():
+                loaded_data[k] = [v[i] for i in indices]
         self.data['label'] = [d for d in loaded_data['label']] # batch size
         self.data['z_gold'] = [d for d in loaded_data['rationale']] ## needs to pad (during collate)
         sen_spans = [d for d in loaded_data['sentence_span']]

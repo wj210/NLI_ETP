@@ -2,15 +2,22 @@ import os
 import numpy as np
 
 # Change accordingly.
-dataset = 'boolq' # dataset
+dataset = 'multirc' # dataset
 data_path = 'results/single/num'
 ao_only = False
-us_pct = '10' # how much pct of supervised data used for NLI predictor. 
+us_pct = 10 # how much pct of supervised data used for NLI predictor. 
+model = 'roberta-base'
+file_types = ['hard']
+data_pct = 10 # how much supervised data, only for supervised
+trained = False # if nli model was pre-ft
+
+os.makedirs('results/final',exist_ok=True)
 
 new_data_path = f'results/final/{dataset}'
 if not os.path.exists(new_data_path):
     os.makedirs(new_data_path)
-new_datafile = os.path.join(new_data_path, 'combined.txt')
+
+new_datafile = os.path.join(new_data_path, f'combined_{model}.txt')
 dataset_path = os.path.join(data_path, dataset)
 
 def get_filename(filename,file_type):
@@ -18,32 +25,37 @@ def get_filename(filename,file_type):
         filename += '_no_plaus_0.0.txt'
         write_name = 'Full Context'
     elif file_type == 'supervised':
-        filename += '_S_1.0.txt'
+        if data_pct < 100:
+            filename += '_S_10_untrained_1.0.txt'
+        else:
+            filename += '_S_trained_1.0.txt'
         write_name = 'Supervised (GOLD)'
     elif file_type == 'hard':
-        filename += f'-sm_{us_pct}_mo_1.0.txt'
+        if not trained:
+            filename += f'-sm_{us_pct}_mo_untrained_1.0.txt'
+        else:
+            filename += f'-sm_{us_pct}_mo_trained_1.0.txt'
         write_name = 'Hard '
     elif file_type == 'hard_align':
-        filename += f'-sm_{us_pct}_mo_1.0_align.txt'
+        filename += f'-sm_{us_pct}_mo_trained_1.0_align.txt'
         write_name = 'Hard with align'
     elif file_type == 'soft':
-        filename += f'-sm_{us_pct}_soft_1.0.txt'
+        filename += f'-sm_{us_pct}_soft_trained_1.0.txt'
         write_name = 'Soft '
     elif file_type == 'soft_align':
-        filename += f'-sm_{us_pct}_soft_1.0_align.txt'
+        filename += f'-sm_{us_pct}_soft_trained_1.0_align.txt'
         write_name = 'Soft with align'
     return filename,write_name
     
 
 # every approach
-for i,file_type in enumerate(['supervised']):
+for i,file_type in enumerate(file_types):
     task_acc = []
     task_f1 = []
     token_f1 = []
     precision = []
     recall = []
-    filename = 'roberta-base' # change if using different model
-    filename,write_name = get_filename(filename,file_type)
+    filename,write_name = get_filename(model,file_type)
     ## every seed
     for seed in range(42,45):
         seed_path = os.path.join(dataset_path, str(seed))
@@ -62,7 +74,8 @@ for i,file_type in enumerate(['supervised']):
                     precision.append(float(line.split(':')[-1].strip()))
                 elif line.startswith('=='): # end of results
                     break
-                
+    new_datafile = new_datafile.split('.txt')[0] + f'{filename}.txt'
+    
     with open(new_datafile,'a') as f:
         f.write(write_name+'\n')
         f.write('='*90+'\n')
