@@ -147,9 +147,11 @@ class NLI_ETP(pl.LightningModule):
                     avg_p = torch.sum(nli_p,dim = 1) / num_sens # (b,no classes)
 
                     if self.hparams.task != 'evidence_inference':
-                        y_hat_aligned = torch.max(avg_p[:,:2],y_hat_probs) # avg_p throw away neutral class and align
+                        # y_hat_aligned = torch.max(avg_p[:,:2],y_hat_probs) # avg_p throw away neutral class and align
+                        y_hat_aligned = y_hat_probs * avg_p[:,:2] # has 2 classes
                     else:
-                        y_hat_aligned = torch.max(avg_p,y_hat_probs) # has 3 classes
+                        # y_hat_aligned = torch.max(avg_p,y_hat_probs) # has 3 classes
+                        y_hat_aligned = y_hat_probs * avg_p
                     y_hat = torch.argmax(y_hat_aligned,dim = -1)
                 else:
                     y_hat = torch.argmax(y_hat_probs,dim = -1)
@@ -574,8 +576,8 @@ def main():
             model = NLI_ETP(args)
             trainer.fit(model)
             # test_metrics = trainer.test(model,
-            #                             ckpt_path='best'
-            #                             )
+                                        # ckpt_path='best'
+                                        # )
         # test_metrics = test_metrics[0]
         # if trainer.global_rank == 0:
         #     with open(output_num_file[task],'a',encoding = 'utf-8') as f:

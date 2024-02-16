@@ -1,10 +1,10 @@
 export PYTHONPATH=$PYTHONPATH:/~/finbert/finBERT/t5  # set to root dir
-export CUDA_VISIBLE_DEVICES=7
-batchsize=32
-dataset=multirc
+export CUDA_VISIBLE_DEVICES=5
+batchsize=64
+dataset=fever
 
 #arguements - dataset: dataset, arch: tokenizer model name, data_dir: dir of eraser data pct_train_rationales = amount of supervised z
-for supervised_percent in 0.1 0.25
+for supervised_percent in 0.1
 do
 
     ## To get nli data for to train f_nli
