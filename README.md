@@ -30,6 +30,6 @@ To get averaged results across all seed runs, run get_seed_results.py
 @article{jie2024plausible,
   title={Plausible Extractive Rationalization through Semi-Supervised Entailment Signal},
   author={Jie, Yeo Wei and Satapathy, Ranjan and Cambria, Erik},
-  journal={arXiv preprint arXiv:2402.08479},
+  journal={ACL},
   year={2024}
 }
